@@ -80,7 +80,7 @@ app.post('/chat', async (req, res) => {
     const chatResponse = await axios.post(
       'https://api.sarvam.ai/v1/chat/completions',
       {
-        model: 'sarvam-m',
+        model: 'sarvam-105b',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userText },
@@ -90,7 +90,7 @@ app.post('/chat', async (req, res) => {
       },
       {
         headers: {
-          'api-subscription-key': SARVAM_API_KEY,
+          Authorization: `Bearer ${SARVAM_API_KEY}`,
           'Content-Type': 'application/json',
         },
         timeout: 20000,
@@ -109,7 +109,7 @@ app.post('/chat', async (req, res) => {
       const ttsResponse = await axios.post(
         'https://api.sarvam.ai/text-to-speech',
         {
-          inputs: [{ text: botText }],
+          inputs: [botText],
           target_language_code: 'hi-IN',
           model: 'bulbul:v2',
           speaker: 'anushka',
