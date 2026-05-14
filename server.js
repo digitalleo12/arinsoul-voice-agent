@@ -9,7 +9,7 @@ app.use(express.json({ limit: '15mb' }));
 
 const SARVAM_API_KEY = process.env.SARVAM_API_KEY;
 
-// ─── ArinSoul Support Agent System Prompt ────────────────────────────────────
+// ─── System Prompt ────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Priya, a warm and caring voice assistant for ArinSoul — an NLP coaching service in India run by Arin.
 
 SPEAK ONLY in Hinglish (natural Hindi + English mix), like a close friend who genuinely cares. Keep every reply to 2-3 short sentences max — this is a voice conversation so be concise and natural.
@@ -31,13 +31,12 @@ RESPOND DIRECTLY to what the person says:
 NEVER say generic greetings as a response. ALWAYS directly address what they said.
 NEVER be pushy. Be like a helpful friend, not a salesperson.`;
 
-
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({ status: 'ArinSoul Voice Agent is running 🎙️' });
 });
 
-// ─── Main Voice Chat Endpoint ──────────────────────────────────────────────────
+// ─── Main Voice Chat Endpoint ─────────────────────────────────────────────────
 app.post('/chat', async (req, res) => {
   try {
     const { audio } = req.body;
@@ -56,7 +55,6 @@ app.post('/chat', async (req, res) => {
     });
     formData.append('model', 'saarika:v2');
     formData.append('mode', 'transcribe');
-    // language_code omitted so Sarvam auto-detects Hindi/English/Hinglish
 
     const sttResponse = await axios.post(
       'https://api.sarvam.ai/speech-to-text',
@@ -73,10 +71,7 @@ app.post('/chat', async (req, res) => {
     const userText = sttResponse.data.transcript?.trim();
 
     if (!userText) {
-      return res.json({
-        error: 'Sunai nahi diya. Dobara bolein please!',
-        audio: null,
-      });
+      return res.json({ error: 'Sunai nahi diya. Dobara bolein please!', audio: null });
     }
 
     console.log(`[STT] User said: "${userText}"`);
@@ -85,7 +80,7 @@ app.post('/chat', async (req, res) => {
     const chatResponse = await axios.post(
       'https://api.sarvam.ai/v1/chat/completions',
       {
-        model: 'sarvam-105b',
+        model: 'sarvam-m',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userText },
@@ -95,50 +90,54 @@ app.post('/chat', async (req, res) => {
       },
       {
         headers: {
-          Authorization: `Bearer ${SARVAM_API_KEY}`,
+          'api-subscription-key': SARVAM_API_KEY,
           'Content-Type': 'application/json',
         },
         timeout: 20000,
       }
     );
 
-    const botText = chatResponse.data.choices[0].message.content.trim();
+    const botText = chatResponse.data.choices?.[0]?.message?.content?.trim()
+      || 'Aapki baat sun li. Kya aap ek baar session try karna chahenge?';
+
     console.log(`[LLM] Bot reply: "${botText}"`);
 
     // ── Step 3: Text → Speech (Sarvam TTS) ──────────────────────────────────
-    const ttsResponse = await axios.post(
-      'https://api.sarvam.ai/text-to-speech',
-      {
-        inputs: [{ text: botText }],
-        target_language_code: 'hi-IN',
-        model: 'bulbul:v2',
-        speaker: 'anushka',
-        pace: 1.0,
-        speech_sample_rate: 22050,
-        enable_preprocessing: true,
-      },
-      {
-        headers: {
-          'api-subscription-key': SARVAM_API_KEY,
-          'Content-Type': 'application/json',
+    let audioBase64 = null;
+
+    try {
+      const ttsResponse = await axios.post(
+        'https://api.sarvam.ai/text-to-speech',
+        {
+          inputs: [{ text: botText }],
+          target_language_code: 'hi-IN',
+          model: 'bulbul:v2',
+          speaker: 'anushka',
+          pace: 1.0,
+          speech_sample_rate: 22050,
+          enable_preprocessing: true,
         },
-        timeout: 15000,
-      }
-    );
+        {
+          headers: {
+            'api-subscription-key': SARVAM_API_KEY,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
 
-    const audioBase64 = ttsResponse.data.audios?.[0] ?? null;
+      audioBase64 = ttsResponse.data.audios?.[0] ?? null;
+    } catch (ttsErr) {
+      console.error('[TTS Error]', ttsErr.response?.data || ttsErr.message);
+      // Continue without audio — text response still goes through
+    }
 
-    // ── Return everything to frontend ────────────────────────────────────────
-    res.json({
-      userText,
-      botText,
-      audio: audioBase64,
-    });
+    // ── Return to frontend ───────────────────────────────────────────────────
+    res.json({ userText, botText, audio: audioBase64 });
 
   } catch (err) {
     const errMsg = err.response?.data || err.message;
     console.error('[ERROR]', errMsg);
-
     res.status(500).json({
       error: 'Kuch problem aa gayi. Thodi der baad dobara try karein!',
       detail: errMsg,
@@ -151,6 +150,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ ArinSoul Voice Agent running on port ${PORT}`);
   if (!SARVAM_API_KEY) {
-    console.warn('⚠️  WARNING: SARVAM_API_KEY not set! Set it in your environment.');
+    console.warn('⚠️  WARNING: SARVAM_API_KEY not set!');
   }
 });
