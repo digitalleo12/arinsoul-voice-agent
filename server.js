@@ -90,15 +90,19 @@ app.post('/chat', async (req, res) => {
       },
       {
         headers: {
-          Authorization: `Bearer ${SARVAM_API_KEY}`,
+          'api-subscription-key': SARVAM_API_KEY,
           'Content-Type': 'application/json',
         },
         timeout: 20000,
       }
     );
 
+    console.log('[LLM Raw]', JSON.stringify(chatResponse.data));
+
     const botText = chatResponse.data.choices?.[0]?.message?.content?.trim()
-      || 'Aapki baat sun li. Kya aap ek baar session try karna chahenge?';
+      || chatResponse.data.content?.trim()
+      || chatResponse.data.text?.trim()
+      || 'Aapki baat sun li. Kya aap ek baar 99 rupaye wala session try karein?';
 
     console.log(`[LLM] Bot reply: "${botText}"`);
 
@@ -127,6 +131,7 @@ app.post('/chat', async (req, res) => {
       );
 
       audioBase64 = ttsResponse.data.audios?.[0] ?? null;
+      console.log('[TTS] audio received:', audioBase64 ? 'yes (' + audioBase64.length + ' chars)' : 'null');
     } catch (ttsErr) {
       console.error('[TTS Error]', ttsErr.response?.data || ttsErr.message);
       // Continue without audio — text response still goes through
