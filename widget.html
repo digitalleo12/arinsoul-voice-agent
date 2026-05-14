@@ -1,0 +1,316 @@
+<!--
+  ╔══════════════════════════════════════════════════════╗
+  ║   ArinSoul Voice Agent Widget  v2                   ║
+  ║   Paste this entire block just before </body>       ║
+  ║   in your website's HTML file.                      ║
+  ╚══════════════════════════════════════════════════════╝
+-->
+
+<!-- ════════ STYLES ════════ -->
+<style>
+  #as-widget {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+  }
+
+  #as-bubble {
+    background: #ffffff;
+    border-radius: 18px 18px 4px 18px;
+    padding: 14px 18px;
+    box-shadow: 0 8px 32px rgba(107, 70, 193, 0.18);
+    max-width: 270px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #2d2d2d;
+    display: none;
+    border: 1px solid #ede9fe;
+  }
+
+  #as-bot-text { margin-bottom: 6px; }
+
+  #as-user-text {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  #as-status {
+    font-size: 11px;
+    color: #7c3aed;
+    font-weight: 600;
+    margin-top: 4px;
+    min-height: 14px;
+  }
+
+  #as-btn {
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    color: white;
+    font-size: 26px;
+    cursor: pointer;
+    box-shadow: 0 6px 24px rgba(124, 58, 237, 0.45);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #as-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 8px 28px rgba(124, 58, 237, 0.6);
+  }
+
+  #as-btn.as-listening {
+    background: linear-gradient(135deg, #dc2626, #f87171);
+    box-shadow: 0 6px 24px rgba(220, 38, 38, 0.45);
+    animation: as-pulse 1.2s infinite;
+  }
+
+  #as-btn.as-processing {
+    background: linear-gradient(135deg, #d97706, #fbbf24);
+    box-shadow: 0 6px 24px rgba(217, 119, 6, 0.45);
+  }
+
+  #as-label {
+    font-size: 11px;
+    color: #6b7280;
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  @keyframes as-pulse {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.12); }
+  }
+</style>
+
+<!-- ════════ HTML ════════ -->
+<div id="as-widget">
+  <div id="as-bubble">
+    <div id="as-bot-text">Namaste! 🙏 Main ArinSoul ki taraf se hoon. Anxiety, stress ya overthinking ke baare mein kuch poochna hai? Boliye!</div>
+    <div id="as-user-text"></div>
+    <div id="as-status"></div>
+  </div>
+
+  <button id="as-btn" title="ArinSoul Voice Support">🎙️</button>
+  <div id="as-label">Voice Support</div>
+</div>
+
+<!-- ════════ SCRIPT ════════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── Config ─────────────────────────────────────── */
+  var BACKEND = 'https://arinsoul-voice-agent-production.up.railway.app';
+
+  /* ── DOM refs ───────────────────────────────────── */
+  var btn     = document.getElementById('as-btn');
+  var bubble  = document.getElementById('as-bubble');
+  var botText = document.getElementById('as-bot-text');
+  var userTxt = document.getElementById('as-user-text');
+  var status  = document.getElementById('as-status');
+
+  if (!btn || !bubble) return; // Elements not found – bail out
+
+  /* ── State ──────────────────────────────────────── */
+  var recorder  = null;
+  var chunks    = [];
+  var listening = false;
+  var busy      = false;
+
+  /* ── Show greeting bubble after 1.5 s ───────────── */
+  setTimeout(function () {
+    bubble.style.display = 'block';
+  }, 1500);
+
+  /* ── Button click (addEventListener is more reliable than onclick attr) ── */
+  btn.addEventListener('click', function () {
+    if (busy) return;
+    if (listening) {
+      stopRec();
+    } else {
+      startRec();
+    }
+  });
+
+  /* ─────────────────────────────────────────────────
+     startRec – request mic, begin recording
+  ───────────────────────────────────────────────── */
+  function startRec() {
+    /* Must be HTTPS */
+    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+      showMsg('⚠️ HTTPS zaruri hai voice ke liye. Apna website HTTPS pe open karein.');
+      return;
+    }
+
+    /* Must support getUserMedia */
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showMsg('⚠️ Aapka browser voice record nahi kar sakta. Chrome ya Safari use karein.');
+      return;
+    }
+
+    navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true }
+    })
+    .then(function (stream) {
+      /* Pick first supported mimeType */
+      var types = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4'
+      ];
+      var mimeType = '';
+      for (var i = 0; i < types.length; i++) {
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(types[i])) {
+          mimeType = types[i];
+          break;
+        }
+      }
+
+      chunks = [];
+      var opts = mimeType ? { mimeType: mimeType } : {};
+
+      try {
+        recorder = new MediaRecorder(stream, opts);
+      } catch (e) {
+        recorder = new MediaRecorder(stream); // fallback – no options
+      }
+
+      recorder.ondataavailable = function (e) {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.onstop = processAudio;
+      recorder.start(200);
+
+      listening = true;
+      btn.className  = 'as-listening';
+      btn.textContent = '🔴';
+      bubble.style.display = 'block';
+      botText.textContent  = 'Sun raha hoon... 👂 Boliye!';
+      userTxt.textContent  = '';
+      status.textContent   = 'Tap to stop recording';
+    })
+    .catch(function (err) {
+      var msg = '⚠️ Microphone access chahiye. Browser mein allow karein!';
+      if (err && err.name === 'NotAllowedError')  msg = '🎤 Microphone permission deny hui. Browser settings mein allow karein.';
+      if (err && err.name === 'NotFoundError')    msg = '🎤 Koi microphone nahi mila. Ek connect karein.';
+      showMsg(msg);
+    });
+  }
+
+  /* ─────────────────────────────────────────────────
+     stopRec – stop MediaRecorder, trigger processAudio
+  ───────────────────────────────────────────────── */
+  function stopRec() {
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+      if (recorder.stream) {
+        recorder.stream.getTracks().forEach(function (t) { t.stop(); });
+      }
+    }
+    listening = false;
+    busy      = true;
+    btn.className  = 'as-processing';
+    btn.textContent = '⏳';
+    status.textContent = 'Samajh raha hoon...';
+  }
+
+  /* ─────────────────────────────────────────────────
+     processAudio – convert to base64, send to backend
+  ───────────────────────────────────────────────── */
+  function processAudio() {
+    if (chunks.length === 0) {
+      showMsg('⚠️ Koi audio nahi mila. Dobara try karein.');
+      resetBtn();
+      return;
+    }
+
+    var mimeType = (recorder && recorder.mimeType) ? recorder.mimeType : 'audio/webm';
+    var blob = new Blob(chunks, { type: mimeType });
+
+    botText.textContent = 'Jawab dhoondh raha hoon... 🤔';
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var base64 = reader.result.split(',')[1];
+
+      fetch(BACKEND + '/chat', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ audio: base64 })
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.text().then(function (t) { throw new Error('Server ' + res.status + ': ' + t); });
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        if (data.error && !data.botText) {
+          botText.textContent = data.error;
+          status.textContent  = 'Dobara try karein 🎙️';
+        } else {
+          botText.textContent = data.botText || 'Kuch samajh nahi aaya, dobara bolein.';
+          userTxt.textContent = data.userText ? 'You: "' + data.userText + '"' : '';
+          status.textContent  = 'Tap mic to speak again';
+          if (data.audio) playAudio(data.audio);
+        }
+        resetBtn();
+      })
+      .catch(function (err) {
+        botText.textContent = '❌ Backend se connect nahi ho raha. Internet check karein!';
+        status.textContent  = String(err.message || 'Network error');
+        resetBtn();
+      });
+    };
+
+    reader.onerror = function () {
+      showMsg('❌ Audio process nahi ho saka. Dobara try karein.');
+      resetBtn();
+    };
+
+    reader.readAsDataURL(blob);
+  }
+
+  /* ─────────────────────────────────────────────────
+     Helpers
+  ───────────────────────────────────────────────── */
+  function playAudio(base64Audio) {
+    try {
+      var audio = new Audio('data:audio/wav;base64,' + base64Audio);
+      audio.play().catch(function () { /* autoplay blocked – ignore */ });
+    } catch (e) { /* ignore */ }
+  }
+
+  function showMsg(msg) {
+    bubble.style.display = 'block';
+    botText.textContent  = msg;
+    userTxt.textContent  = '';
+    status.textContent   = '';
+  }
+
+  function resetBtn() {
+    busy = false;
+    btn.className   = '';
+    btn.textContent = '🎙️';
+  }
+
+})();
+</script>
