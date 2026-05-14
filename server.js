@@ -53,7 +53,7 @@ app.post('/chat', async (req, res) => {
       filename: 'voice.webm',
       contentType: 'audio/webm',
     });
-    formData.append('model', 'saarika:v2');
+    formData.append('model', 'saarika:v2.5');
     formData.append('mode', 'transcribe');
 
     const sttResponse = await axios.post(
