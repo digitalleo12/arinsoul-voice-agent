@@ -141,6 +141,11 @@
 
   /* ── Button click (addEventListener is more reliable than onclick attr) ── */
   btn.addEventListener('click', function () {
+    // If previous audio was blocked by autoplay, play it now on user gesture
+    if (pendingAudio) {
+      try { new Audio('data:audio/wav;base64,' + pendingAudio).play(); } catch(e) {}
+      pendingAudio = null;
+    }
     if (busy) return;
     if (listening) {
       stopRec();
@@ -292,11 +297,20 @@
   /* ─────────────────────────────────────────────────
      Helpers
   ───────────────────────────────────────────────── */
+  var pendingAudio = null; // holds audio queued if autoplay was blocked
+
   function playAudio(base64Audio) {
     try {
       var audio = new Audio('data:audio/wav;base64,' + base64Audio);
-      audio.play().catch(function () { /* autoplay blocked – ignore */ });
-    } catch (e) { /* ignore */ }
+      var playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(function () {
+          // Autoplay blocked — store it and play on next button click
+          pendingAudio = base64Audio;
+          status.textContent = '🔊 Tap mic to hear reply';
+        });
+      }
+    } catch (e) { pendingAudio = base64Audio; }
   }
 
   function showMsg(msg) {

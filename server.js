@@ -85,7 +85,7 @@ app.post('/chat', async (req, res) => {
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userText },
         ],
-        max_tokens: 120,
+        max_tokens: 600,
         temperature: 0.7,
       },
       {
